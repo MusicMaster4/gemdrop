@@ -15,6 +15,8 @@ Baixe o instalador ou a versão portátil em [Releases](https://github.com/Music
 
 Abra as configurações, adicione sua chave do OpenRouter e escolha um modelo. Crie um preset com título, descrição e system prompt; abra o preset para começar uma conversa. Cada conversa preserva o prompt usado na criação, mesmo que você edite o preset depois.
 
+Em Configurações, defina o modelo e o **thinking effort** padrão. Cada preset pode herdar esses valores ou escolher os seus. Novas conversas preservam o modelo e o esforço resolvidos na criação; conversas antigas mantêm sua configuração. Automático usa o padrão do provedor, e a disponibilidade dos demais níveis depende do modelo.
+
 O app inicial é distribuído para Windows x64 e usa o WebView2 do sistema. O pacote portátil pode ser extraído e executado sem instalar o Gemdrop.
 
 ## Desenvolver localmente

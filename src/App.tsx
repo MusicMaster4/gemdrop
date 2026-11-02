@@ -703,6 +703,8 @@ export default function App() {
       {editor && (
         <PresetEditor
           preset={editor === "new" ? undefined : editor}
+          models={models}
+          defaults={data.settings}
           onClose={() => setEditor(null)}
           onSave={(draft, id) => {
             library.savePreset(draft, id);

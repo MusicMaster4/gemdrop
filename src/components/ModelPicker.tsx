@@ -8,11 +8,15 @@ export function ModelPicker({
   selected,
   onSelect,
   onClose,
+  onUseDefault,
+  defaultModelName,
 }: {
   models: Model[];
   selected: string;
   onSelect: (model: string) => void;
   onClose: () => void;
+  onUseDefault?: () => void;
+  defaultModelName?: string;
 }) {
   const [search, setSearch] = useState("");
   const filtered = models
@@ -34,6 +38,23 @@ export function ModelPicker({
         />
       </div>
       <div className="model-list">
+        {onUseDefault && (
+          <button
+            type="button"
+            className={`model-option ${selected === "" ? "selected" : ""}`}
+            onClick={() => {
+              onUseDefault();
+              onClose();
+            }}
+          >
+            <Cpu size={18} />
+            <span>
+              <strong>Usar padrão</strong>
+              <small>{defaultModelName}</small>
+            </span>
+            {selected === "" && <Check size={17} />}
+          </button>
+        )}
         {filtered.map((model) => (
           <button
             key={model.id}

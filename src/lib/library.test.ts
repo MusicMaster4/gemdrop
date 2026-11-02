@@ -307,3 +307,134 @@ describe("local library and chat lifecycle", () => {
     ).rejects.toThrow("salvar");
   });
 });
+
+describe("model and reasoning defaults", () => {
+  it("migrates old libraries without changing the model or behavior of existing conversations", async () => {
+    const { library } = setup();
+    await library.initialize();
+    library.createConversation(library.getSnapshot().data.presets[0].id);
+    const legacy = JSON.parse(library.exportData());
+    delete legacy.settings.reasoningEffort;
+    for (const preset of legacy.presets) {
+      delete preset.model;
+      delete preset.reasoningEffort;
+    }
+    for (const conversation of legacy.conversations)
+      delete conversation.reasoningEffort;
+    const migrated = validateData(legacy);
+    expect(migrated.settings.reasoningEffort).toBe("default");
+    expect(migrated.presets[0].model).toBeNull();
+    expect(migrated.presets[0].reasoningEffort).toBeNull();
+    expect(migrated.conversations[0].model).toBe(legacy.conversations[0].model);
+    expect(migrated.conversations[0].reasoningEffort).toBe("default");
+    for (const invalid of ["ultra", true, null]) {
+      expect(() =>
+        validateData({
+          ...legacy,
+          settings: { ...legacy.settings, reasoningEffort: invalid },
+        }),
+      ).toThrow();
+    }
+    expect(() =>
+      validateData({
+        ...legacy,
+        presets: [{ ...legacy.presets[0], model: "  " }],
+      }),
+    ).toThrow();
+    expect(() =>
+      validateData({
+        ...legacy,
+        presets: [{ ...legacy.presets[0], reasoningEffort: "ultra" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      validateData({
+        ...legacy,
+        conversations: [
+          { ...legacy.conversations[0], reasoningEffort: "ultra" },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("resolves independent preset overrides and snapshots them for send, retry and reloading", async () => {
+    const { library, completion } = setup();
+    await library.initialize();
+    const preset = library.getSnapshot().data.presets[0];
+    library.updateSettings({
+      model: "openai/gpt-5.2",
+      reasoningEffort: "high",
+    });
+    const inherited = library.createConversation(preset.id);
+    library.savePreset(
+      {
+        ...preset,
+        model: "google/gemini-3-flash-preview",
+        reasoningEffort: "low",
+      },
+      preset.id,
+    );
+    const overridden = library.createConversation(preset.id);
+    library.savePreset(
+      {
+        ...preset,
+        model: "anthropic/claude-sonnet-4.6",
+        reasoningEffort: null,
+      },
+      preset.id,
+    );
+    const inheritedEffort = library.createConversation(preset.id);
+    library.savePreset(
+      { ...preset, model: null, reasoningEffort: "max" },
+      preset.id,
+    );
+    const inheritedModel = library.createConversation(preset.id);
+    library.updateSettings({
+      model: "openrouter/free",
+      reasoningEffort: "none",
+    });
+    library.savePreset(
+      { ...preset, model: null, reasoningEffort: null },
+      preset.id,
+    );
+    await library.sendMessage(inherited, "First");
+    await library.sendMessage(overridden, "Second");
+    await library.retryMessage(overridden);
+    await library.sendMessage(inheritedEffort, "Third");
+    await library.sendMessage(inheritedModel, "Fourth");
+    expect(
+      completion.start.mock.calls.map(([request]) => [
+        request.model,
+        request.reasoningEffort,
+      ]),
+    ).toEqual([
+      ["openai/gpt-5.2", "high"],
+      ["google/gemini-3-flash-preview", "low"],
+      ["google/gemini-3-flash-preview", "low"],
+      ["anthropic/claude-sonnet-4.6", "high"],
+      ["openai/gpt-5.2", "max"],
+    ]);
+    const exported = parseImport(library.exportData());
+    expect(
+      exported.conversations.find((item) => item.id === inherited)
+        ?.reasoningEffort,
+    ).toBe("high");
+    expect(exported.presets[0].model).toBeNull();
+    expect(exported.presets[0].reasoningEffort).toBeNull();
+    const newConversation = library.createConversation(preset.id);
+    expect(
+      library
+        .getSnapshot()
+        .data.conversations.find((item) => item.id === newConversation),
+    ).toMatchObject({ model: "openrouter/free", reasoningEffort: "none" });
+    expect(() =>
+      library.updateSettings({ reasoningEffort: "invalid" as never }),
+    ).toThrow();
+    expect(() =>
+      library.savePreset(
+        { ...preset, reasoningEffort: "invalid" as never },
+        preset.id,
+      ),
+    ).toThrow();
+  });
+});

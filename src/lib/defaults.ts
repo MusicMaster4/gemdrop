@@ -65,10 +65,16 @@ export function createInitialData(): AppData {
       id: `starter-${index + 1}`,
       favorite: index === 0,
       webSearch: false,
+      model: null,
+      reasoningEffort: null,
       createdAt: now,
       updatedAt: now,
     })),
     conversations: [],
-    settings: { model: DEFAULT_MODEL, temperature: 0.7 },
+    settings: {
+      model: DEFAULT_MODEL,
+      reasoningEffort: "default",
+      temperature: 0.7,
+    },
   };
 }

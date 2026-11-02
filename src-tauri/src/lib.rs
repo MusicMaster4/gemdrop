@@ -19,6 +19,20 @@ pub struct ChatMessage {
     content: String,
 }
 
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningEffort {
+    #[default]
+    Default,
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompletionRequest {
@@ -28,6 +42,8 @@ pub struct CompletionRequest {
     temperature: f64,
     #[serde(default)]
     web_search: bool,
+    #[serde(default)]
+    reasoning_effort: ReasoningEffort,
 }
 
 #[derive(Clone, Serialize, Debug)]
@@ -95,7 +111,7 @@ fn clear_api_key() -> Result<(), String> {
 fn http_error(status: reqwest::StatusCode) -> String {
     match status.as_u16() {
         400 | 422 => {
-            "O modelo não aceitou esta conversa. Confira o modelo e o tamanho das mensagens."
+            "O modelo não aceitou esta conversa. Confira o modelo, o esforço de raciocínio e o tamanho das mensagens."
         }
         401 | 403 => "A chave foi recusada. Confira sua chave do OpenRouter nas configurações.",
         402 => "Seu saldo no OpenRouter é insuficiente para este modelo.",
@@ -211,6 +227,9 @@ fn request_body(request: &CompletionRequest) -> serde_json::Value {
         "temperature": request.temperature,
         "stream": true
     });
+    if request.reasoning_effort != ReasoningEffort::Default {
+        body["reasoning"] = serde_json::json!({ "effort": request.reasoning_effort });
+    }
     if request.web_search {
         body["plugins"] = serde_json::json!([{ "id": "web" }]);
     }
@@ -450,6 +469,7 @@ mod tests {
             ],
             temperature: 0.7,
             web_search: false,
+            reasoning_effort: ReasoningEffort::Default,
         }
     }
 
@@ -463,6 +483,37 @@ mod tests {
         assert_eq!(body["messages"][1]["content"], "Hello");
         assert_eq!(body["stream"], true);
         assert!(body.get("requestId").is_none());
+    }
+
+    #[test]
+    fn reasoning_effort_is_forwarded_only_when_explicitly_selected() {
+        let mut request = request();
+        assert!(request_body(&request).get("reasoning").is_none());
+        for effort in ["none", "minimal", "low", "medium", "high", "xhigh", "max"] {
+            request.reasoning_effort = serde_json::from_value(serde_json::json!(effort)).unwrap();
+            let body = request_body(&request);
+            assert_eq!(body["reasoning"], serde_json::json!({ "effort": effort }));
+            assert_eq!(body["model"], request.model);
+        }
+    }
+
+    #[test]
+    fn legacy_requests_keep_the_provider_default_and_invalid_efforts_are_rejected() {
+        let mut body = request_body(&request());
+        body["requestId"] = serde_json::json!("request-legacy");
+        let legacy: CompletionRequest = serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(legacy.reasoning_effort, ReasoningEffort::Default);
+        body["reasoningEffort"] = serde_json::json!("default");
+        let explicit_default: CompletionRequest = serde_json::from_value(body.clone()).unwrap();
+        assert!(request_body(&explicit_default).get("reasoning").is_none());
+        for invalid in [
+            serde_json::json!("ultra"),
+            serde_json::json!(true),
+            serde_json::json!(null),
+        ] {
+            body["reasoningEffort"] = invalid;
+            assert!(serde_json::from_value::<CompletionRequest>(body.clone()).is_err());
+        }
     }
 
     #[test]

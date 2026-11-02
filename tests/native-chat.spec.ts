@@ -239,3 +239,160 @@ test("internet opt-in is saved and forwarded to the actual chat request", async 
   );
   expect(request.webSearch).toBe(true);
 });
+
+test("global model and thinking defaults apply to new conversations and survive settings changes", async ({
+  page,
+}) => {
+  await mockNative(page);
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Configurações", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Thinking effort padrão" })
+    .selectOption("high");
+  await page
+    .getByRole("dialog", { name: "Configurações" })
+    .getByRole("button", { name: "GPT-4.1 mini" })
+    .click();
+  await page
+    .getByRole("textbox", { name: "ID de outro modelo" })
+    .fill("openai/gpt-5.2");
+  await page.getByRole("button", { name: "Usar", exact: true }).click();
+  await page.getByRole("button", { name: "Fechar", exact: true }).click();
+  await connect(page);
+  await page
+    .getByRole("textbox", { name: "Mensagem", exact: true })
+    .fill("Primeira questão");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+  await expect(page.locator(".message.assistant strong")).toHaveText(
+    "resposta completa",
+  );
+  await page
+    .getByRole("button", { name: "Configurações", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Thinking effort padrão" })
+    .selectOption("none");
+  await page.getByRole("button", { name: "Fechar", exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Mensagem", exact: true })
+    .fill("Segunda questão");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+  await expect(
+    page.getByRole("button", { name: "Parar resposta" }),
+  ).toHaveCount(0);
+  const requests = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __requests: { model: string; reasoningEffort: string }[];
+        }
+      ).__requests,
+  );
+  expect(
+    requests.map((request) => [request.model, request.reasoningEffort]),
+  ).toEqual([
+    ["openai/gpt-5.2", "high"],
+    ["openai/gpt-5.2", "high"],
+  ]);
+});
+
+test("new presets can override and reset both the model and thinking effort", async ({
+  page,
+}) => {
+  await mockNative(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Novo preset", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Novo preset" });
+  await editor
+    .getByRole("textbox", { name: "Nome", exact: true })
+    .fill("Análise precisa");
+  await editor
+    .getByRole("textbox", { name: "System prompt" })
+    .fill("Analise com cuidado e clareza.");
+  await editor.getByRole("button", { name: "Modelo do preset" }).click();
+  await page
+    .getByRole("textbox", { name: "ID de outro modelo" })
+    .fill("google/gemini-3-flash-preview");
+  await page.getByRole("button", { name: "Usar", exact: true }).click();
+  await editor
+    .getByRole("combobox", { name: "Thinking effort" })
+    .selectOption("low");
+  await page.screenshot({
+    path: "artifacts/preset-reasoning.png",
+    fullPage: true,
+  });
+  await editor.getByRole("button", { name: "Criar preset" }).click();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Configurações", exact: true })
+    .click();
+  await page
+    .getByLabel("Chave de API OpenRouter", { exact: true })
+    .fill("sk-or-test-not-a-real-credential");
+  await page.getByRole("button", { name: "Salvar chave", exact: true }).click();
+  await expect(
+    page.getByText("Chave salva. Tudo pronto para conversar."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Fechar", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Conversar com Análise precisa" })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Mensagem", exact: true })
+    .fill("Minha análise");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+  await expect(page.locator(".message.assistant strong")).toHaveText(
+    "resposta completa",
+  );
+  const request = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __requests: { model: string; reasoningEffort: string }[];
+        }
+      ).__requests[0],
+  );
+  expect([request.model, request.reasoningEffort]).toEqual([
+    "google/gemini-3-flash-preview",
+    "low",
+  ]);
+  await page.getByRole("button", { name: "Voltar à biblioteca" }).click();
+  await page.getByLabel("Opções de Análise precisa", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Editar preset", exact: true })
+    .click();
+  const edit = page.getByRole("dialog", { name: "Editar preset" });
+  await expect(
+    edit.getByRole("combobox", { name: "Thinking effort" }),
+  ).toHaveValue("low");
+  await edit.getByRole("button", { name: "Modelo do preset" }).click();
+  await page.getByRole("button", { name: /Usar padrão/ }).click();
+  await edit
+    .getByRole("combobox", { name: "Thinking effort" })
+    .selectOption("inherit");
+  await edit.getByRole("button", { name: "Salvar alterações" }).click();
+  await page
+    .getByRole("button", { name: "Conversar com Análise precisa" })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Mensagem", exact: true })
+    .fill("Minha nova análise");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+  await expect(page.locator(".message.assistant strong")).toHaveText(
+    "resposta completa",
+  );
+  const requests = await page.evaluate(
+    () =>
+      (
+        window as unknown as {
+          __requests: { model: string; reasoningEffort: string }[];
+        }
+      ).__requests,
+  );
+  expect([requests[1].model, requests[1].reasoningEffort]).toEqual([
+    "openai/gpt-4.1-mini",
+    "default",
+  ]);
+});

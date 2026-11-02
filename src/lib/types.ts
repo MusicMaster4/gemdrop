@@ -1,4 +1,6 @@
-﻿export interface Preset {
+import type { ReasoningEffort } from "./reasoning";
+
+export interface Preset {
   id: string;
   title: string;
   description: string;
@@ -6,6 +8,8 @@
   icon: string;
   color: string;
   favorite: boolean;
+  model: string | null;
+  reasoningEffort: ReasoningEffort | null;
   webSearch: boolean;
   createdAt: string;
   updatedAt: string;
@@ -14,7 +18,11 @@
 export type PresetDraft = Pick<
   Preset,
   "title" | "description" | "systemPrompt" | "icon" | "color" | "webSearch"
-> & { favorite?: boolean };
+> & {
+  favorite?: boolean;
+  model?: string | null;
+  reasoningEffort?: ReasoningEffort | null;
+};
 
 export interface Message {
   id: string;
@@ -33,12 +41,14 @@ export interface Conversation {
   messages: Message[];
   webSearch: boolean;
   model: string;
+  reasoningEffort: ReasoningEffort;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface Settings {
   model: string;
+  reasoningEffort: ReasoningEffort;
   temperature: number;
 }
 
@@ -62,6 +72,7 @@ export interface ChatMessage {
 
 export interface CompletionRequest {
   requestId: string;
+  reasoningEffort: ReasoningEffort;
   model: string;
   messages: ChatMessage[];
   temperature: number;

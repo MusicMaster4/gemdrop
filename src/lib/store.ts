@@ -1,4 +1,5 @@
-﻿import { isDesktop } from "./native";
+﻿import { isReasoningEffort, type ReasoningEffort } from "./reasoning";
+import { isDesktop } from "./native";
 import type { AppData, Conversation, Message, Preset } from "./types";
 
 const STORAGE_KEY = "gemdrop.library.v1";
@@ -26,6 +27,21 @@ const webSearch = (value: unknown): boolean => {
       "A configura\u00e7\u00e3o de acesso \u00e0 internet \u00e9 inv\u00e1lida.",
     );
   return value;
+};
+const reasoningEffort = (
+  value: unknown,
+  fallback: ReasoningEffort = "default",
+): ReasoningEffort => {
+  if (value === undefined) return fallback;
+  if (!isReasoningEffort(value))
+    throw new Error("Esforço de raciocínio inválido.");
+  return value;
+};
+const modelOverride = (value: unknown): string | null => {
+  if (value === undefined || value === null) return null;
+  const model = string(value, 200).trim();
+  if (!model || /\s/.test(model)) throw new Error("Modelo inválido.");
+  return model;
 };
 const date = (value: unknown): string => {
   const result = string(value, 40);
@@ -67,6 +83,11 @@ export function validateData(input: unknown): AppData {
       icon: string(preset.icon, 40),
       color,
       favorite: preset.favorite,
+      model: modelOverride(preset.model),
+      reasoningEffort:
+        preset.reasoningEffort == null
+          ? null
+          : reasoningEffort(preset.reasoningEffort),
       webSearch: webSearch(preset.webSearch),
       createdAt: date(preset.createdAt),
       updatedAt: date(preset.updatedAt),
@@ -111,6 +132,7 @@ export function validateData(input: unknown): AppData {
         webSearch: webSearch(conversation.webSearch),
         messages,
         model: string(conversation.model, 200),
+        reasoningEffort: reasoningEffort(conversation.reasoningEffort),
         createdAt: date(conversation.createdAt),
         updatedAt: date(conversation.updatedAt),
       };
@@ -134,7 +156,11 @@ export function validateData(input: unknown): AppData {
     version: 1,
     presets,
     conversations,
-    settings: { model, temperature },
+    settings: {
+      model,
+      reasoningEffort: reasoningEffort(settings.reasoningEffort),
+      temperature,
+    },
   };
 }
 

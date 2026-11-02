@@ -1,4 +1,5 @@
-﻿import { UpdateControl } from "../UpdateControl";
+﻿import { ReasoningSelect } from "./ReasoningSelect";
+import { UpdateControl } from "../UpdateControl";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
@@ -187,6 +188,21 @@ export function SettingsDialog({
             {modelName}
             <ChevronDown size={15} />
           </button>
+        </div>
+        <div className="setting-row">
+          <div>
+            <label htmlFor="default-reasoning-effort">
+              Thinking effort padrão
+            </label>
+            <p>Disponível em modelos com raciocínio.</p>
+          </div>
+          <ReasoningSelect
+            id="default-reasoning-effort"
+            value={settings.reasoningEffort}
+            onChange={(value) => {
+              if (value !== null) onUpdate({ reasoningEffort: value });
+            }}
+          />
         </div>
         <div className="setting-row temperature-row">
           <div>

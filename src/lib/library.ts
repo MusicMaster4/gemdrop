@@ -1,4 +1,5 @@
-﻿import { createInitialData } from "./defaults";
+﻿import { isReasoningEffort } from "./reasoning";
+import { createInitialData } from "./defaults";
 import { cancelCompletion, startCompletion } from "./native";
 import {
   createStorage,
@@ -173,6 +174,18 @@ export class LibraryController {
     const existing = this.state.data.presets.find(
       (preset) => preset.id === presetId,
     );
+    const model =
+      input.model === undefined
+        ? (existing?.model ?? null)
+        : (input.model?.trim() ?? null);
+    const reasoningEffort =
+      input.reasoningEffort === undefined
+        ? (existing?.reasoningEffort ?? null)
+        : input.reasoningEffort;
+    if (model !== null && (!model || model.length > 200 || /\s/.test(model)))
+      throw new Error("Escolha um modelo válido.");
+    if (reasoningEffort !== null && !isReasoningEffort(reasoningEffort))
+      throw new Error("Esforço de raciocínio inválido.");
     const timestamp = now();
     const preset = {
       id: existing?.id ?? id(),
@@ -182,6 +195,8 @@ export class LibraryController {
       icon: input.icon,
       color: input.color,
       favorite: input.favorite ?? existing?.favorite ?? false,
+      model,
+      reasoningEffort,
       webSearch: input.webSearch,
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
@@ -228,7 +243,9 @@ export class LibraryController {
       systemPrompt: preset.systemPrompt,
       webSearch: preset.webSearch,
       messages: [],
-      model: this.state.data.settings.model,
+      model: preset.model ?? this.state.data.settings.model,
+      reasoningEffort:
+        preset.reasoningEffort ?? this.state.data.settings.reasoningEffort,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -251,6 +268,7 @@ export class LibraryController {
   updateSettings = (patch: Partial<Settings>): void => {
     const settings = { ...this.state.data.settings, ...patch };
     if (
+      !isReasoningEffort(settings.reasoningEffort) ||
       !settings.model.trim() ||
       settings.model.length > 200 ||
       !Number.isFinite(settings.temperature) ||
@@ -342,6 +360,7 @@ export class LibraryController {
     const request: CompletionRequest = {
       requestId: id(),
       model: conversation.model,
+      reasoningEffort: conversation.reasoningEffort,
       messages: buildRequestMessages(conversation),
       temperature: this.state.data.settings.temperature,
       webSearch: conversation.webSearch,
