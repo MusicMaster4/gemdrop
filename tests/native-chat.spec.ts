@@ -177,3 +177,28 @@ test("cancelled stream preserves partial text and ignores late native events", a
     "fantasma",
   );
 });
+
+test("provider failure can be retried without duplicating the user message", async ({
+  page,
+}) => {
+  await mockNative(page);
+  await connect(page);
+  await page.evaluate(() => {
+    (window as unknown as { __failNext: boolean }).__failNext = true;
+  });
+  await page
+    .getByRole("textbox", { name: "Mensagem", exact: true })
+    .fill("Minha pergunta original");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "O provedor está indisponível.",
+  );
+  await page
+    .getByRole("button", { name: "Tentar novamente", exact: true })
+    .click();
+  await expect(page.locator(".message.assistant strong")).toHaveText(
+    "resposta completa",
+  );
+  await expect(page.locator(".message.user")).toHaveCount(1);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});

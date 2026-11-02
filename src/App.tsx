@@ -1103,6 +1103,18 @@ function ChatView({
             {error && (
               <div className="chat-error" role="alert">
                 <span>{error}</span>
+                {!streaming &&
+                  !anotherStreaming &&
+                  conversation.messages.length > 0 && (
+                    <button
+                      type="button"
+                      className="button ghost"
+                      onClick={onRetry}
+                    >
+                      <RotateCcw size={14} />
+                      Tentar novamente
+                    </button>
+                  )}
                 <IconButton label="Fechar erro" onClick={onClearError}>
                   <X size={14} />
                 </IconButton>
