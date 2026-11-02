@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches-ignore: [main, testing]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Validate and build Windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck and test
+        run: |
+          bun run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun run test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test scripts/release-version.test.mjs scripts/release-manifest.test.mjs scripts/release-apply-version.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Browser end-to-end tests
+        run: |
+          bunx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun run test:e2e
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build installable application
+        run: |
+          '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Encoding utf8 "$env:RUNNER_TEMP/unsigned.json"
+          bun run desktop:build --bundles nsis --config "$env:RUNNER_TEMP/unsigned.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/release-stage.ps1 -Version '0.0.0-ci.${{ github.run_number }}' -Channel ci
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gemdrop-windows-ci-${{ github.run_number }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,25 @@
+{
+    "$schema":  "../gen/schemas/desktop-schema.json",
+    "identifier":  "main-capability",
+    "description":  "Local library persistence for the main Gemdrop window.",
+    "windows":  [
+                    "main"
+                ],
+    "permissions":  [
+                        "core:default",
+                        "store:default",
+                        "updater:default",
+                        "process:allow-restart",
+                        {
+                            "identifier":  "opener:allow-open-url",
+                            "allow":  [
+                                          {
+                                              "url":  "https://*"
+                                          },
+                                          {
+                                              "url":  "http://*"
+                                          }
+                                      ]
+                        }
+                    ]
+}

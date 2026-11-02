@@ -1,0 +1,36 @@
+[package]
+name = "gemdrop"
+version = "0.1.0"
+description = "A local home for your system prompts"
+authors = ["MusicMaster4"]
+edition = "2021"
+rust-version = "1.90"
+license = "MIT"
+
+[lib]
+name = "gemdrop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-store = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+keyring = "4.2"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "s"
+strip = true
+panic = "abort"

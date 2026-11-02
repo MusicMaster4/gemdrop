@@ -1,0 +1,164 @@
+name: Release
+run-name: Gemdrop ${{ github.ref_name == 'main' && 'stable' || 'beta' }}
+
+# A push publishes only to the branch's own channel. Nothing merges or promotes branches.
+on:
+  push:
+    branches: [main, testing]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - LICENSE
+      - .gitignore
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment from the latest stable release
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      publish:
+        description: Publish the release (disable for a signed test build)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Resolve channel and version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      channel: ${{ steps.version.outputs.channel }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Resolve release version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+          PUBLISH: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
+        run: |
+          set -euo pipefail
+          node --test scripts/release-version.test.mjs scripts/release-manifest.test.mjs scripts/release-apply-version.test.mjs
+          bun scripts/release-version.mjs --branch "$GITHUB_REF_NAME" --bump "${BUMP:-patch}"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Validate and build signed Windows application
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: bun install --frozen-lockfile
+      - name: Set version and isolated updater channel
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          CHANNEL: ${{ needs.version.outputs.channel }}
+        run: bun scripts/release-apply-version.mjs --version "$env:VERSION" --channel "$env:CHANNEL" --repo "$env:GITHUB_REPOSITORY"
+      - name: Validate source
+        run: |
+          bun run check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun run test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Browser end-to-end tests
+        run: |
+          bunx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          bun run test:e2e
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build signed installer and updater
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) { throw 'Configure the TAURI_SIGNING_PRIVATE_KEY repository secret before publishing.' }
+          bun run desktop:build --bundles nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Stage downloads and updater manifest
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          CHANNEL: ${{ needs.version.outputs.channel }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          ./scripts/release-stage.ps1 -Version "$env:VERSION" -Channel "$env:CHANNEL" -RequireSignature
+          bun scripts/release-manifest.mjs --version "$env:VERSION" --tag "$env:TAG" --repo "$env:GITHUB_REPOSITORY"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gemdrop-${{ needs.version.outputs.channel }}-${{ needs.version.outputs.version }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish completed release
+    needs: [version, windows]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.version.outputs.tag }}
+      CHANNEL: ${{ needs.version.outputs.channel }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: gemdrop-${{ needs.version.outputs.channel }}-${{ needs.version.outputs.version }}
+          path: release-assets
+      - name: Create a draft with verified downloads
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            if [ "$CHANNEL" = "testing" ]; then
+              gh release create "$TAG" --repo "$REPO" --target "$GITHUB_SHA" --draft --prerelease --title "Gemdrop $TAG (beta)" --generate-notes
+            else
+              gh release create "$TAG" --repo "$REPO" --target "$GITHUB_SHA" --draft --title "Gemdrop $TAG" --generate-notes
+            fi
+          fi
+          gh release upload "$TAG" release-assets/* --repo "$REPO" --clobber
+      - name: Publish to the matching channel
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = "testing" ]; then
+            gh release edit "$TAG" --repo "$REPO" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$TAG" --repo "$REPO" --draft=false --prerelease=false --latest
+          fi
+      - name: Update the permanent beta download and updater pointer
+        if: needs.version.outputs.channel == 'testing'
+        run: |
+          set -euo pipefail
+          mkdir -p beta-channel
+          cp release-assets/latest.json beta-channel/latest.json
+          cp release-assets/*_setup.exe beta-channel/Gemdrop-beta-setup.exe
+          cp release-assets/*_portable.zip beta-channel/Gemdrop-beta-portable.zip
+          if ! gh release view channel-testing --repo "$REPO" >/dev/null 2>&1; then
+            gh release create channel-testing --repo "$REPO" --target "$GITHUB_SHA" --prerelease --latest=false --title "Gemdrop beta" --notes "Downloads permanentes do beta mais recente. O manifesto aponta para os arquivos assinados da release correspondente."
+          fi
+          gh release upload channel-testing beta-channel/* --repo "$REPO" --clobber
