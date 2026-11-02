@@ -6,13 +6,14 @@
   icon: string;
   color: string;
   favorite: boolean;
+  webSearch: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
 export type PresetDraft = Pick<
   Preset,
-  "title" | "description" | "systemPrompt" | "icon" | "color"
+  "title" | "description" | "systemPrompt" | "icon" | "color" | "webSearch"
 > & { favorite?: boolean };
 
 export interface Message {
@@ -30,6 +31,7 @@ export interface Conversation {
   title: string;
   systemPrompt: string;
   messages: Message[];
+  webSearch: boolean;
   model: string;
   createdAt: string;
   updatedAt: string;
@@ -63,6 +65,7 @@ export interface CompletionRequest {
   model: string;
   messages: ChatMessage[];
   temperature: number;
+  webSearch: boolean;
 }
 
 export type StreamEvent =

@@ -202,3 +202,40 @@ test("provider failure can be retried without duplicating the user message", asy
   await expect(page.locator(".message.user")).toHaveCount(1);
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
+
+test("internet opt-in is saved and forwarded to the actual chat request", async ({
+  page,
+}) => {
+  await mockNative(page);
+  await page.goto("/");
+  await page.getByLabel("Opções de Um segundo olhar", { exact: true }).click();
+  await page
+    .getByRole("button", { name: "Editar preset", exact: true })
+    .click();
+  const editor = page.getByRole("dialog", { name: "Editar preset" });
+  await expect(
+    editor.getByRole("switch", { name: "Acesso à internet" }),
+  ).not.toBeChecked();
+  await editor.getByRole("switch", { name: "Acesso à internet" }).click();
+  await editor.getByRole("button", { name: "Salvar alterações" }).click();
+  await expect(
+    page.getByRole("img", { name: "Internet ativada" }),
+  ).toBeVisible();
+  await connect(page);
+  await expect(
+    page.locator(".chat-header").getByRole("img", { name: "Internet ativada" }),
+  ).toBeVisible();
+  await page
+    .getByRole("textbox", { name: "Mensagem", exact: true })
+    .fill("Pesquise as notícias de hoje");
+  await page.getByRole("button", { name: "Enviar mensagem" }).click();
+  await expect(page.locator(".message.assistant strong")).toHaveText(
+    "resposta completa",
+  );
+  const request = await page.evaluate(
+    () =>
+      (window as unknown as { __requests: { webSearch: boolean }[] })
+        .__requests[0],
+  );
+  expect(request.webSearch).toBe(true);
+});

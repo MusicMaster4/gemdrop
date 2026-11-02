@@ -19,6 +19,14 @@ const string = (value: unknown, max = 100_000): string => {
     throw new Error("A biblioteca contém um campo inválido ou muito longo.");
   return value;
 };
+const webSearch = (value: unknown): boolean => {
+  if (value === undefined) return false;
+  if (typeof value !== "boolean")
+    throw new Error(
+      "A configura\u00e7\u00e3o de acesso \u00e0 internet \u00e9 inv\u00e1lida.",
+    );
+  return value;
+};
 const date = (value: unknown): string => {
   const result = string(value, 40);
   if (!Number.isFinite(Date.parse(result)))
@@ -59,6 +67,7 @@ export function validateData(input: unknown): AppData {
       icon: string(preset.icon, 40),
       color,
       favorite: preset.favorite,
+      webSearch: webSearch(preset.webSearch),
       createdAt: date(preset.createdAt),
       updatedAt: date(preset.updatedAt),
     };
@@ -99,6 +108,7 @@ export function validateData(input: unknown): AppData {
           : { presetTitle: string(conversation.presetTitle, 120) }),
         title: string(conversation.title, 160),
         systemPrompt: string(conversation.systemPrompt),
+        webSearch: webSearch(conversation.webSearch),
         messages,
         model: string(conversation.model, 200),
         createdAt: date(conversation.createdAt),

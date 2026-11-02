@@ -64,6 +64,7 @@ export function createInitialData(): AppData {
       ...preset,
       id: `starter-${index + 1}`,
       favorite: index === 0,
+      webSearch: false,
       createdAt: now,
       updatedAt: now,
     })),

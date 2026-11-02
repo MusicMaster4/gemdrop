@@ -2518,3 +2518,88 @@ a {
     scroll-behavior: auto !important;
   }
 }
+.internet-setting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: #202125;
+}
+.internet-setting > svg {
+  flex-shrink: 0;
+  color: #9c91ac;
+}
+.internet-setting > div {
+  flex: 1;
+  min-width: 0;
+}
+.internet-setting > div > span {
+  font-size: 11px;
+  font-weight: 500;
+  color: #d2cedc;
+}
+.internet-setting p {
+  font-size: 10px;
+  line-height: 1.7;
+  color: #85818f;
+  margin: 5px 0 0;
+}
+.internet-switch {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 35px;
+  height: 21px;
+  border-radius: 12px;
+  border: 1px solid #4b4754;
+  background: #34313c;
+  padding: 2px;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.internet-switch > span {
+  display: block;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #9993a4;
+  transition:
+    transform 0.15s,
+    background 0.15s;
+}
+.internet-switch[aria-checked="true"] {
+  background: #b7a0dc;
+  border-color: #b7a0dc;
+}
+.internet-switch[aria-checked="true"] > span {
+  transform: translateX(13px);
+  background: #282031;
+}
+@media (max-width: 650px) {
+  .internet-setting {
+    padding: 12px;
+    gap: 10px;
+  }
+  .internet-setting > div > span {
+    font-size: 10px;
+  }
+  .internet-setting p {
+    font-size: 9px;
+  }
+  .internet-setting > svg {
+    width: 17px;
+  }
+}
+.web-access-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.chat-header-actions > .web-access-indicator {
+  padding: 8px;
+}

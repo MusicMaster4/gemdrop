@@ -1,64 +1,60 @@
 {
-    "$schema":  "https://schema.tauri.app/config/2",
-    "productName":  "Gemdrop",
-    "version":  "0.1.0",
-    "identifier":  "com.musicmaster.gemdrop",
-    "build":  {
-                  "beforeDevCommand":  "bun run dev",
-                  "devUrl":  "http://127.0.0.1:1427",
-                  "beforeBuildCommand":  "bun run build",
-                  "frontendDist":  "../dist"
-              },
-    "app":  {
-                "windows":  [
-                                {
-                                    "label":  "main",
-                                    "title":  "Gemdrop",
-                                    "width":  1320,
-                                    "height":  880,
-                                    "minWidth":  880,
-                                    "minHeight":  600,
-                                    "backgroundColor":  "#111214",
-                                    "center":  true
-                                }
-                            ],
-                "security":  {
-                                 "csp":  "default-src \u0027self\u0027; script-src \u0027self\u0027; style-src \u0027self\u0027 \u0027unsafe-inline\u0027; img-src \u0027self\u0027 asset: http://asset.localhost data:; font-src \u0027self\u0027 data:; connect-src ipc: http://ipc.localhost",
-                                 "devCsp":  "default-src \u0027self\u0027; script-src \u0027self\u0027 \u0027unsafe-eval\u0027; style-src \u0027self\u0027 \u0027unsafe-inline\u0027; img-src \u0027self\u0027 asset: http://asset.localhost data:; font-src \u0027self\u0027 data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:1427 ws://127.0.0.1:1427"
-                             }
-            },
-    "bundle":  {
-                   "active":  true,
-                   "targets":  [
-                                   "nsis"
-                               ],
-                   "category":  "Productivity",
-                   "shortDescription":  "Your prompts. Your models. Your space.",
-                   "copyright":  "Copyright (c) 2026 MusicMaster4",
-                   "icon":  [
-                                "icons/32x32.png",
-                                "icons/128x128.png",
-                                "icons/128x128@2x.png",
-                                "icons/icon.ico"
-                            ],
-                   "windows":  {
-                                   "nsis":  {
-                                                "displayLanguageSelector":  true,
-                                                "languages":  [
-                                                                  "English",
-                                                                  "PortugueseBR"
-                                                              ],
-                                                "installMode":  "currentUser"
-                                            }
-                               },
-                   "createUpdaterArtifacts":  true
-               },
-    "plugins":  {
-                    "updater":  {
-                                    "endpoints":  [
-                                                      "https://github.com/MusicMaster4/gemdrop/releases/latest/download/latest.json"
-                                                  ],
-                                    "pubkey":  "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxMjk1NjcyNkEwREVFNTMKUldSVDdnMXFjbFlwZ1hGMHhMVHdnRXlIKzc1UW5rMXIxQkJhYVRPUm04eFZ3OFEyWEttS3g5WEgK"
-                                }
-                }
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Gemdrop",
+  "version": "0.1.0",
+  "identifier": "com.musicmaster.gemdrop",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://127.0.0.1:1427",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Gemdrop",
+        "width": 1320,
+        "height": 880,
+        "minWidth": 880,
+        "minHeight": 600,
+        "backgroundColor": "#111214",
+        "center": true,
+        "theme": "Dark"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:1427 ws://127.0.0.1:1427"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "category": "Productivity",
+    "shortDescription": "Your prompts. Your models. Your space.",
+    "copyright": "Copyright (c) 2026 MusicMaster4",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": true,
+        "languages": ["English", "PortugueseBR"],
+        "installMode": "currentUser"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/MusicMaster4/gemdrop/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxMjk1NjcyNkEwREVFNTMKUldSVDdnMXFjbFlwZ1hGMHhMVHdnRXlIKzc1UW5rMXIxQkJhYVRPUm04eFZ3OFEyWEttS3g5WEgK"
+    }
+  }
 }

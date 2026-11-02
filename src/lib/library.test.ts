@@ -60,6 +60,82 @@ describe("versioned library validation", () => {
   });
 });
 
+describe("web access policy", () => {
+  it("migrates old version 1 data with web access disabled and rejects invalid flags", () => {
+    const data = createInitialData();
+    const legacy = {
+      ...data,
+      presets: data.presets.map(
+        ({ webSearch: _webSearch, ...preset }) => preset,
+      ),
+      conversations: [
+        {
+          id: "legacy-conversation",
+          presetId: data.presets[0].id,
+          title: "Existing chat",
+          systemPrompt: "Original prompt",
+          messages: [],
+          model: data.settings.model,
+          createdAt: data.presets[0].createdAt,
+          updatedAt: data.presets[0].updatedAt,
+        },
+      ],
+    };
+    const migrated = validateData(legacy);
+    expect(migrated.presets.every((preset) => preset.webSearch === false)).toBe(
+      true,
+    );
+    expect(migrated.conversations[0].webSearch).toBe(false);
+    expect(() =>
+      validateData({
+        ...legacy,
+        presets: [{ ...legacy.presets[0], webSearch: "true" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      validateData({
+        ...legacy,
+        conversations: [{ ...legacy.conversations[0], webSearch: null }],
+      }),
+    ).toThrow();
+    expect(
+      validateData({
+        ...legacy,
+        conversations: [{ ...legacy.conversations[0], webSearch: true }],
+      }).conversations[0].webSearch,
+    ).toBe(true);
+  });
+
+  it("snapshots each conversation's web access and sends it on every completion and retry", async () => {
+    const { library, completion } = setup();
+    await library.initialize();
+    const preset = library.getSnapshot().data.presets[0];
+    const offlineConversation = library.createConversation(preset.id);
+    library.savePreset({ ...preset, webSearch: true }, preset.id);
+    const onlineConversation = library.createConversation(preset.id);
+    library.savePreset({ ...preset, webSearch: false }, preset.id);
+    await library.sendMessage(offlineConversation, "Offline question");
+    await library.sendMessage(onlineConversation, "Online question");
+    await library.retryMessage(onlineConversation);
+    expect(
+      completion.start.mock.calls.map(([request]) => request.webSearch),
+    ).toEqual([false, true, true]);
+    const exported = parseImport(library.exportData());
+    expect(exported.presets[0].webSearch).toBe(false);
+    expect(
+      exported.conversations.find(
+        (conversation) => conversation.id === onlineConversation,
+      )?.webSearch,
+    ).toBe(true);
+    expect(
+      exported.conversations.find(
+        (conversation) => conversation.id === offlineConversation,
+      )?.webSearch,
+    ).toBe(false);
+    await library.flush();
+  });
+});
+
 describe("local library and chat lifecycle", () => {
   it("always sends the original system prompt plus complete saved history", async () => {
     const { library, completion, saved } = setup();

@@ -166,6 +166,10 @@ export class LibraryController {
       throw new Error("O título, descrição ou system prompt é muito longo.");
     if (!/^#[0-9a-f]{6}$/i.test(input.color))
       throw new Error("Escolha uma cor válida.");
+    if (typeof input.webSearch !== "boolean")
+      throw new Error(
+        "A configura\u00e7\u00e3o de acesso \u00e0 internet \u00e9 inv\u00e1lida.",
+      );
     const existing = this.state.data.presets.find(
       (preset) => preset.id === presetId,
     );
@@ -178,6 +182,7 @@ export class LibraryController {
       icon: input.icon,
       color: input.color,
       favorite: input.favorite ?? existing?.favorite ?? false,
+      webSearch: input.webSearch,
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     };
@@ -221,6 +226,7 @@ export class LibraryController {
       presetTitle: preset.title,
       title: "Nova conversa",
       systemPrompt: preset.systemPrompt,
+      webSearch: preset.webSearch,
       messages: [],
       model: this.state.data.settings.model,
       createdAt: timestamp,
@@ -338,6 +344,7 @@ export class LibraryController {
       model: conversation.model,
       messages: buildRequestMessages(conversation),
       temperature: this.state.data.settings.temperature,
+      webSearch: conversation.webSearch,
     };
     const active = {
       requestId: request.requestId,

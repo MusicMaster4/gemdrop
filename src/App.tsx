@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   Copy,
   FileText,
+  Globe2,
   History,
   Library,
   LoaderCircle,
@@ -102,6 +103,19 @@ function IconButton({
 function modelShortName(id: string, models: Model[]) {
   return (
     models.find((model) => model.id === id)?.name ?? id.split("/").at(-1) ?? id
+  );
+}
+
+function WebAccessIndicator() {
+  return (
+    <span
+      className="web-access-indicator"
+      role="img"
+      aria-label="Internet ativada"
+      title="Internet ativada"
+    >
+      <Globe2 size={14} />
+    </span>
   );
 }
 
@@ -623,6 +637,7 @@ export default function App() {
                         <div className="card-footer">
                           <span>
                             <MessageSquare size={13} />
+                            {preset.webSearch && <WebAccessIndicator />}
                             {count
                               ? `${count} ${count === 1 ? "conversa" : "conversas"}`
                               : "Uma nova conversa"}
@@ -898,6 +913,7 @@ function ChatView({
           </div>
         </div>
         <div className="chat-header-actions">
+          {conversation.webSearch && <WebAccessIndicator />}
           <button
             className={`button ghost prompt-toggle ${showPrompt ? "selected" : ""}`}
             onClick={() => setShowPrompt(!showPrompt)}

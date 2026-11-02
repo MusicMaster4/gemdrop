@@ -26,6 +26,8 @@ pub struct CompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
     temperature: f64,
+    #[serde(default)]
+    web_search: bool,
 }
 
 #[derive(Clone, Serialize, Debug)]
@@ -136,6 +138,27 @@ async fn fetch_models(state: State<'_, NativeState>) -> Result<Vec<Model>, Strin
     Ok(models)
 }
 
+/// These models browse inherently, even when no OpenRouter web plugin is sent.
+/// Match canonical model IDs (before variants), never arbitrary name substrings.
+fn model_requires_web_search(model: &str) -> bool {
+    let mut parts = model.split(':');
+    let base_model = parts.next().unwrap_or_default();
+    let inherently_online = [
+        "perplexity/sonar",
+        "perplexity/sonar-pro",
+        "perplexity/sonar-pro-search",
+        "perplexity/sonar-reasoning",
+        "perplexity/sonar-reasoning-pro",
+        "perplexity/sonar-deep-research",
+        "openai/gpt-4o-search-preview",
+        "openai/gpt-4o-mini-search-preview",
+    ];
+    inherently_online
+        .iter()
+        .any(|id| base_model.eq_ignore_ascii_case(id))
+        || parts.any(|variant| variant.eq_ignore_ascii_case("online"))
+}
+
 fn validate_request(request: &CompletionRequest) -> Result<(), String> {
     if request.request_id.is_empty()
         || request.request_id.len() > 128
@@ -151,6 +174,9 @@ fn validate_request(request: &CompletionRequest) -> Result<(), String> {
         || request.model.chars().any(char::is_whitespace)
     {
         return Err("Selecione um modelo válido.".into());
+    }
+    if !request.web_search && model_requires_web_search(&request.model) {
+        return Err("Este modelo usa internet. Ative Internet no preset ou escolha um modelo sem busca integrada.".into());
     }
     if !request.temperature.is_finite() || !(0.0..=2.0).contains(&request.temperature) {
         return Err("A temperatura deve ficar entre 0 e 2.".into());
@@ -179,12 +205,16 @@ fn validate_request(request: &CompletionRequest) -> Result<(), String> {
 }
 
 fn request_body(request: &CompletionRequest) -> serde_json::Value {
-    serde_json::json!({
+    let mut body = serde_json::json!({
         "model": request.model,
         "messages": request.messages,
         "temperature": request.temperature,
         "stream": true
-    })
+    });
+    if request.web_search {
+        body["plugins"] = serde_json::json!([{ "id": "web" }]);
+    }
+    body
 }
 
 /// Decode SSE a line at a time, keeping UTF-8 bytes intact across transport chunks.
@@ -419,6 +449,7 @@ mod tests {
                 },
             ],
             temperature: 0.7,
+            web_search: false,
         }
     }
 
@@ -432,6 +463,68 @@ mod tests {
         assert_eq!(body["messages"][1]["content"], "Hello");
         assert_eq!(body["stream"], true);
         assert!(body.get("requestId").is_none());
+    }
+
+    #[test]
+    fn web_search_is_an_explicit_opt_in_plugin() {
+        let mut request = request();
+        assert!(request_body(&request).get("plugins").is_none());
+        request.web_search = true;
+        assert_eq!(
+            request_body(&request)["plugins"],
+            serde_json::json!([{ "id": "web" }])
+        );
+        request.web_search = false;
+        assert!(request_body(&request).get("plugins").is_none());
+    }
+
+    #[test]
+    fn older_requests_default_to_web_search_disabled() {
+        let mut body = request_body(&request());
+        body["requestId"] = serde_json::json!("old-request");
+        let old_request: CompletionRequest = serde_json::from_value(body.clone()).unwrap();
+        assert!(!old_request.web_search);
+        body["webSearch"] = serde_json::json!(true);
+        let online_request: CompletionRequest = serde_json::from_value(body).unwrap();
+        assert!(online_request.web_search);
+    }
+
+    #[test]
+    fn online_models_cannot_bypass_web_search_disabled() {
+        let mut request = request();
+        for model in [
+            "openai/gpt-5.2:online",
+            "openai/gpt-oss-20b:free:online",
+            "openai/gpt-oss-20b:online:free",
+            "openai/gpt-5.2:ONLINE",
+            "perplexity/sonar",
+            "perplexity/sonar-pro",
+            "perplexity/sonar-pro-search",
+            "perplexity/sonar-reasoning",
+            "perplexity/sonar-reasoning-pro",
+            "perplexity/sonar-deep-research",
+            "perplexity/sonar-pro:free",
+            "openai/gpt-4o-search-preview",
+            "openai/gpt-4o-mini-search-preview",
+        ] {
+            request.model = model.into();
+            request.web_search = false;
+            assert!(validate_request(&request).is_err());
+            request.web_search = true;
+            assert!(validate_request(&request).is_ok());
+        }
+        for model in [
+            "openai/gpt-oss-20b:free",
+            "perplexity/r1-1776",
+            "openai/gpt-4o",
+            "openai/gpt-4o-mini",
+            "example/sonar-pro",
+            "example/gpt-4o-search-preview",
+        ] {
+            request.model = model.into();
+            request.web_search = false;
+            assert!(validate_request(&request).is_ok());
+        }
     }
 
     #[test]

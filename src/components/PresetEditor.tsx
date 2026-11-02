@@ -1,5 +1,5 @@
 ﻿import { useState, type FormEvent } from "react";
-import { Check, Shuffle } from "lucide-react";
+import { Check, Globe, Shuffle } from "lucide-react";
 import { Dialog } from "./Dialog";
 import {
   PresetIcon,
@@ -24,6 +24,7 @@ export function PresetEditor({
   const [systemPrompt, setSystemPrompt] = useState(preset?.systemPrompt ?? "");
   const [icon, setIcon] = useState(preset?.icon ?? randomIcon);
   const [color, setColor] = useState(preset?.color ?? randomColor);
+  const [webSearch, setWebSearch] = useState(preset?.webSearch ?? false);
   const [error, setError] = useState("");
   function save(event: FormEvent) {
     event.preventDefault();
@@ -36,6 +37,7 @@ export function PresetEditor({
           systemPrompt: systemPrompt.trim(),
           icon,
           color,
+          webSearch,
           favorite: preset?.favorite ?? false,
         },
         preset?.id,
@@ -149,6 +151,27 @@ export function PresetEditor({
             onChange={(event) => setSystemPrompt(event.target.value)}
           />
         </label>
+        <div className="internet-setting">
+          <Globe size={19} strokeWidth={1.6} aria-hidden="true" />
+          <div>
+            <span id="preset-internet-label">Acesso à internet</span>
+            <p id="preset-internet-description">
+              Busca na web pelo OpenRouter. Pode gerar custos adicionais.
+            </p>
+          </div>
+          <button
+            id="preset-internet-switch"
+            type="button"
+            role="switch"
+            aria-checked={webSearch}
+            aria-labelledby="preset-internet-label"
+            aria-describedby="preset-internet-description"
+            className="internet-switch"
+            onClick={() => setWebSearch(!webSearch)}
+          >
+            <span />
+          </button>
+        </div>
         {error && (
           <p className="error-message" role="alert">
             {error}

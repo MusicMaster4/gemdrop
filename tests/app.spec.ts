@@ -28,6 +28,7 @@ test("preset creation, customization, editing, favorite and persistence", async 
   await dialog
     .getByRole("button", { name: "Cor #91b9a4", exact: true })
     .click();
+  await dialog.getByRole("switch", { name: "Acesso à internet" }).click();
   await dialog.getByRole("button", { name: "Criar preset" }).click();
   await expect(
     page.getByRole("button", { name: "Conversar com Meu revisor" }),
@@ -52,6 +53,9 @@ test("preset creation, customization, editing, favorite and persistence", async 
   await expect(
     editor.getByRole("textbox", { name: "System prompt" }),
   ).toHaveValue("Responda sempre com clareza. Preserve a voz do autor.");
+  await expect(
+    editor.getByRole("switch", { name: "Acesso à internet" }),
+  ).toBeChecked();
   await editor
     .getByRole("textbox", { name: "Nome", exact: true })
     .fill("Meu revisor final");
