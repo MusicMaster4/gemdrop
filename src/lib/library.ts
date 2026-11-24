@@ -22,8 +22,12 @@ export interface LibraryState {
   data: AppData;
   ready: boolean;
   persistenceError: string | null;
-  error: string | null;
-  streamingConversationId: string | null;
+  errors: ReadonlyMap<string, string>;
+  streamingConversationIds: ReadonlySet<string>;
+}
+interface ActiveGeneration {
+  requestId: string;
+  assistantId: string;
 }
 interface CompletionTransport {
   start(
@@ -61,21 +65,15 @@ export class LibraryController {
     data: createInitialData(),
     ready: false,
     persistenceError: null,
-    error: null,
-    streamingConversationId: null,
+    errors: new Map(),
+    streamingConversationIds: new Set(),
   };
   private listeners = new Set<() => void>();
   private initPromise?: Promise<void>;
   private writes: Promise<void> = Promise.resolve();
   private saveTimer?: ReturnType<typeof setTimeout>;
   private storageBlocked = false;
-  private active: {
-    requestId: string;
-    conversationId: string;
-    assistantId: string;
-    cancelled: boolean;
-    failed: boolean;
-  } | null = null;
+  private active = new Map<string, ActiveGeneration>();
 
   constructor(
     private readonly storage: LibraryStorage = createStorage(),
@@ -152,7 +150,17 @@ export class LibraryController {
       })();
     return this.initPromise;
   };
-  clearError = () => this.patch({ error: null });
+  clearError = (conversationId: string): void => {
+    if (!this.state.errors.has(conversationId)) return;
+    const errors = new Map(this.state.errors);
+    errors.delete(conversationId);
+    this.patch({ errors });
+  };
+  private setError(conversationId: string, error: string) {
+    const errors = new Map(this.state.errors);
+    errors.set(conversationId, error);
+    this.patch({ errors });
+  }
 
   savePreset = (input: PresetDraft, presetId?: string): string => {
     const title = input.title.trim();
@@ -256,8 +264,8 @@ export class LibraryController {
     return conversation.id;
   };
   deleteConversation = (conversationId: string): void => {
-    if (this.active?.conversationId === conversationId)
-      void this.stopGeneration();
+    void this.stopGeneration(conversationId);
+    this.clearError(conversationId);
     this.change({
       ...this.state.data,
       conversations: this.state.data.conversations.filter(
@@ -281,7 +289,7 @@ export class LibraryController {
   setConversationModel = (conversationId: string, model: string): void => {
     if (!model.trim() || model.length > 200)
       throw new Error("Escolha um modelo válido.");
-    if (this.active?.conversationId === conversationId) return;
+    if (this.active.has(conversationId)) return;
     this.updateConversation(conversationId, (conversation) => ({
       ...conversation,
       model,
@@ -306,38 +314,37 @@ export class LibraryController {
     );
   }
   sendMessage = async (conversationId: string, text: string): Promise<void> => {
-    if (this.active) {
-      this.patch({
-        error: "Aguarde a resposta atual ou interrompa a geração.",
-      });
-      return;
-    }
+    if (this.active.has(conversationId)) return;
+    const conversation = this.state.data.conversations.find(
+      (item) => item.id === conversationId,
+    );
+    if (!conversation) return;
     const content = text.trim();
     if (!content) return;
     if (content.length > 100_000) {
-      this.patch({ error: "A mensagem deve ter até 100 mil caracteres." });
+      this.setError(
+        conversationId,
+        "A mensagem deve ter até 100 mil caracteres.",
+      );
       return;
     }
-    const conversation = this.state.data.conversations.find(
-      (conversation) => conversation.id === conversationId,
-    );
-    if (!conversation) return;
     const message: Message = {
       id: id(),
       role: "user",
       content,
       createdAt: now(),
     };
-    this.updateConversation(conversationId, (item) => ({
-      ...item,
-      title: item.messages.length ? item.title : content.slice(0, 72),
-      messages: [...item.messages, message],
+    await this.generate({
+      ...conversation,
+      title: conversation.messages.length
+        ? conversation.title
+        : content.slice(0, 72),
+      messages: [...conversation.messages, message],
       updatedAt: now(),
-    }));
-    await this.generate(conversationId);
+    });
   };
   retryMessage = async (conversationId: string): Promise<void> => {
-    if (this.active) return;
+    if (this.active.has(conversationId)) return;
     const conversation = this.state.data.conversations.find(
       (item) => item.id === conversationId,
     );
@@ -345,18 +352,10 @@ export class LibraryController {
     const messages = [...conversation.messages];
     if (messages.at(-1)?.role === "assistant") messages.pop();
     if (messages.at(-1)?.role !== "user") return;
-    this.updateConversation(conversationId, (item) => ({
-      ...item,
-      messages,
-      updatedAt: now(),
-    }));
-    await this.generate(conversationId);
+    await this.generate({ ...conversation, messages, updatedAt: now() });
   };
-  private async generate(conversationId: string): Promise<void> {
-    const conversation = this.state.data.conversations.find(
-      (item) => item.id === conversationId,
-    );
-    if (!conversation) return;
+  private async generate(conversation: Conversation): Promise<void> {
+    const conversationId = conversation.id;
     const request: CompletionRequest = {
       requestId: id(),
       model: conversation.model,
@@ -365,19 +364,17 @@ export class LibraryController {
       temperature: this.state.data.settings.temperature,
       webSearch: conversation.webSearch,
     };
-    const active = {
+    const active: ActiveGeneration = {
       requestId: request.requestId,
-      conversationId,
       assistantId: id(),
-      cancelled: false,
-      failed: false,
     };
-    this.active = active;
-    this.patch({ streamingConversationId: conversationId, error: null });
-    this.updateConversation(conversationId, (item) => ({
-      ...item,
+    this.active.set(conversationId, active);
+    this.clearError(conversationId);
+    this.patch({ streamingConversationIds: new Set(this.active.keys()) });
+    this.updateConversation(conversationId, () => ({
+      ...conversation,
       messages: [
-        ...item.messages,
+        ...conversation.messages,
         {
           id: active.assistantId,
           role: "assistant",
@@ -386,9 +383,11 @@ export class LibraryController {
         },
       ],
     }));
+    let error: string | undefined;
     try {
       await this.completion.start(request, (event) => {
-        if (this.active !== active || active.cancelled || active.failed) return;
+        if (this.active.get(conversationId) !== active || error !== undefined)
+          return;
         if (event.type === "delta") {
           this.updateConversation(
             conversationId,
@@ -399,70 +398,73 @@ export class LibraryController {
                   ? { ...message, content: message.content + event.content }
                   : message,
               ),
-              updatedAt: now(),
             }),
             true,
           );
         } else if (event.type === "error") {
-          active.failed = true;
-          this.patch({ error: event.message });
+          error = event.message;
         }
       });
-    } catch (error) {
-      if (!active.cancelled) {
-        active.failed = true;
-        this.patch({ error: errorText(error) });
-      }
+    } catch (cause) {
+      error ??= errorText(cause);
     } finally {
-      if (this.active === active) {
-        this.finalizeMessage(
-          active,
-          active.cancelled ? "cancelled" : active.failed ? "error" : "complete",
+      if (this.active.get(conversationId) === active) {
+        if (error !== undefined) this.setError(conversationId, error);
+        this.finishGeneration(
+          conversationId,
+          active.assistantId,
+          error === undefined ? "complete" : "error",
         );
-        this.active = null;
-        this.patch({ streamingConversationId: null });
       }
     }
   }
-  private finalizeMessage(
-    active: NonNullable<LibraryController["active"]>,
+  private finishGeneration(
+    conversationId: string,
+    assistantId: string,
     status: NonNullable<Message["status"]>,
   ) {
-    this.updateConversation(active.conversationId, (item) => ({
+    this.active.delete(conversationId);
+    this.updateConversation(conversationId, (item) => ({
       ...item,
       messages: item.messages
         .filter(
           (message) =>
-            message.id !== active.assistantId || message.content.length > 0,
+            message.id !== assistantId || message.content.length > 0,
         )
         .map((message) =>
-          message.id === active.assistantId ? { ...message, status } : message,
+          message.id === assistantId ? { ...message, status } : message,
         ),
       updatedAt: now(),
     }));
+    this.patch({ streamingConversationIds: new Set(this.active.keys()) });
   }
-  stopGeneration = async (): Promise<void> => {
-    const active = this.active;
+  stopGeneration = async (conversationId: string): Promise<void> => {
+    const active = this.active.get(conversationId);
     if (!active) return;
-    active.cancelled = true;
-    this.finalizeMessage(active, "cancelled");
-    this.active = null;
-    this.patch({ streamingConversationId: null });
+    this.finishGeneration(conversationId, active.assistantId, "cancelled");
+    const conversation = this.state.data.conversations.find(
+      (item) => item.id === conversationId,
+    );
     try {
       await this.completion.cancel(active.requestId);
     } catch {
-      this.patch({
-        error:
+      if (conversation && this.state.data.conversations.includes(conversation))
+        this.setError(
+          conversationId,
           "A resposta foi interrompida localmente. Não foi possível confirmar o cancelamento da conexão.",
-      });
+        );
     }
+  };
+  stopAllGenerations = async (): Promise<void> => {
+    await Promise.all([...this.active.keys()].map(this.stopGeneration));
   };
   importData = async (raw: string): Promise<void> => {
     const data = parseImport(raw);
-    await this.stopGeneration();
-    this.patch({ error: null });
+    const stopping = this.stopAllGenerations();
+    this.patch({ errors: new Map() });
     this.storageBlocked = false;
     this.change(data);
+    await stopping;
     await this.flush();
     if (this.state.persistenceError)
       throw new Error(this.state.persistenceError);

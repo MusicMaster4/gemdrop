@@ -9,7 +9,9 @@ async function mockNative(page: Page) {
     const values: Record<string, unknown> = JSON.parse(
       localStorage.getItem("test.native-store") ?? "{}",
     );
-    const pending = new Map<string, () => void>();
+    const pending = new Map<string, (cancelled: boolean) => void>();
+    env.__finishCompletion = (requestId: string) =>
+      pending.get(requestId)?.(false);
     let hasKey = false;
     env.__TAURI_INTERNALS__ = {
       transformCallback: () => 1,
@@ -45,7 +47,7 @@ async function mockNative(page: Page) {
             },
           ];
         if (command === "cancel_completion") {
-          pending.get(String(args.requestId))?.();
+          pending.get(String(args.requestId))?.(true);
           return;
         }
         if (command === "start_completion") {
@@ -68,16 +70,19 @@ async function mockNative(page: Page) {
             return;
           }
           channel.onmessage({ type: "delta", content: "Uma **resposta" });
-          if (request.messages.at(-1)?.content === "Resposta longa") {
-            await new Promise<void>((resolve) => {
+          let cancelled = false;
+          if (request.messages.at(-1)?.content.startsWith("Resposta longa")) {
+            cancelled = await new Promise<boolean>((resolve) => {
               pending.set(request.requestId, resolve);
             });
             pending.delete(request.requestId);
-            channel.onmessage({ type: "delta", content: " fantasma" });
           } else {
             await new Promise((resolve) => setTimeout(resolve, 40));
-            channel.onmessage({ type: "delta", content: " completa**." });
           }
+          channel.onmessage({
+            type: "delta",
+            content: cancelled ? " fantasma" : " completa**.",
+          });
           channel.onmessage({ type: "done" });
           return;
         }
@@ -176,6 +181,60 @@ test("cancelled stream preserves partial text and ignores late native events", a
   await expect(page.locator(".message.assistant")).not.toContainText(
     "fantasma",
   );
+});
+
+test("parallel chats can be opened, stopped and completed independently", async ({
+  page,
+}) => {
+  await mockNative(page);
+  await connect(page);
+  const composer = page.getByRole("textbox", { name: "Mensagem", exact: true });
+  const send = page.getByRole("button", { name: "Enviar mensagem" });
+  const stop = page.getByRole("button", { name: "Parar resposta" });
+  const recent = page.locator(".sidebar-conversations");
+  const first = recent.getByRole("button", { name: /^Resposta longa A/ });
+  const second = recent.getByRole("button", { name: /^Resposta longa B/ });
+  const indicator = page.getByRole("img", { name: "Gerando resposta" });
+
+  await composer.fill("Resposta longa A");
+  await send.click();
+  await expect(stop).toBeVisible();
+  await page
+    .getByRole("button", { name: "Nova conversa com este preset" })
+    .click();
+  await expect(composer).toBeEnabled();
+  await composer.fill("Resposta longa B");
+  await send.click();
+  await expect(recent.locator(".generation-indicator")).toHaveCount(2);
+  await page.getByRole("button", { name: "Histórico", exact: true }).click();
+  await expect(
+    page.locator(".history-list").getByRole("img", { name: "Gerando resposta" }),
+  ).toHaveCount(2);
+
+  await first.click();
+  await stop.click();
+  await expect(first.getByRole("img", { name: "Gerando resposta" })).toHaveCount(0);
+  await expect(
+    second.getByRole("img", { name: "Gerando resposta" }),
+  ).toBeVisible();
+  await expect(page.locator(".message.assistant")).toContainText(
+    "Uma **resposta",
+  );
+  await expect(page.locator(".message.assistant")).not.toContainText("fantasma");
+
+  await second.click();
+  await expect(stop).toBeVisible();
+  await page.evaluate(() => {
+    const env = window as unknown as {
+      __requests: { requestId: string }[];
+      __finishCompletion: (id: string) => void;
+    };
+    env.__finishCompletion(env.__requests[1].requestId);
+  });
+  await expect(page.locator(".message.assistant strong")).toHaveText(
+    "resposta completa",
+  );
+  await expect(indicator).toHaveCount(0);
 });
 
 test("provider failure can be retried without duplicating the user message", async ({

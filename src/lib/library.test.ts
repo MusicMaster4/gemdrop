@@ -164,7 +164,81 @@ describe("local library and chat lifecycle", () => {
       "Segunda pergunta",
       "Resposta",
     ]);
-    expect(library.getSnapshot().streamingConversationId).toBeNull();
+    expect(library.getSnapshot().streamingConversationIds.size).toBe(0);
+  });
+
+  it("keeps errors and retries local while another chat is streaming", async () => {
+    let finish!: (event: StreamEvent) => void;
+    const { library, completion } = setup(async (request, receive) => {
+      if (request.messages.at(-1)?.content === "Primeira") {
+        await new Promise<void>((resolve) => {
+          finish = (event) => {
+            receive(event);
+            resolve();
+          };
+        });
+      } else {
+        receive({ type: "error", message: "Modelo indisponível" });
+      }
+    });
+    await library.initialize();
+    const presetId = library.getSnapshot().data.presets[0].id;
+    const first = library.createConversation(presetId);
+    const second = library.createConversation(presetId);
+    const pending = library.sendMessage(first, "Primeira");
+    await library.sendMessage(second, "Segunda");
+
+    expect(library.getSnapshot().streamingConversationIds).toEqual(
+      new Set([first]),
+    );
+    expect(library.getSnapshot().errors).toEqual(
+      new Map([[second, "Modelo indisponível"]]),
+    );
+    completion.start.mockImplementationOnce(async (_request, receive) => {
+      receive({ type: "delta", content: "Resposta da segunda" });
+    });
+    await library.retryMessage(second);
+    expect(library.getSnapshot().errors.size).toBe(0);
+    expect(library.getSnapshot().streamingConversationIds.has(first)).toBe(true);
+
+    finish({ type: "delta", content: "Resposta da primeira" });
+    await pending;
+    expect(
+      library.getSnapshot().data.conversations.map(({ messages }) =>
+        messages.map(({ content }) => content),
+      ),
+    ).toEqual([
+      ["Segunda", "Resposta da segunda"],
+      ["Primeira", "Resposta da primeira"],
+    ]);
+    await library.flush();
+  });
+
+  it("cancels every active stream when replacing the library", async () => {
+    const finish: (() => void)[] = [];
+    const { library, completion } = setup(
+      async () => new Promise<void>((resolve) => finish.push(resolve)),
+    );
+    await library.initialize();
+    const presetId = library.getSnapshot().data.presets[0].id;
+    const first = library.createConversation(presetId);
+    const second = library.createConversation(presetId);
+    const backup = library.exportData();
+    const pending = [
+      library.sendMessage(first, "Primeira"),
+      library.sendMessage(second, "Segunda"),
+    ];
+
+    await library.importData(backup);
+    for (const [request, receive] of completion.start.mock.calls) {
+      expect(completion.cancel).toHaveBeenCalledWith(request.requestId);
+      receive({ type: "delta", content: "Texto atrasado" });
+    }
+    finish.forEach((resolve) => resolve());
+    await Promise.all(pending);
+    expect(completion.cancel).toHaveBeenCalledTimes(2);
+    expect(library.getSnapshot().streamingConversationIds.size).toBe(0);
+    expect(library.getSnapshot().data).toEqual(parseImport(backup));
   });
 
   it("keeps streamed tokens while independent preset edits occur", async () => {
@@ -209,7 +283,7 @@ describe("local library and chat lifecycle", () => {
     );
     const pending = library.sendMessage(conversationId, "Olá");
     deliver({ type: "delta", content: "Parcial" });
-    await library.stopGeneration();
+    await library.stopGeneration(conversationId);
     deliver({ type: "delta", content: " ignorado" });
     finish();
     await pending;
@@ -217,7 +291,7 @@ describe("local library and chat lifecycle", () => {
     expect(
       library.getSnapshot().data.conversations[0].messages.at(-1),
     ).toMatchObject({ content: "Parcial", status: "cancelled" });
-    expect(library.getSnapshot().streamingConversationId).toBeNull();
+    expect(library.getSnapshot().streamingConversationIds.size).toBe(0);
     await library.flush();
   });
 
@@ -230,7 +304,9 @@ describe("local library and chat lifecycle", () => {
       library.getSnapshot().data.presets[0].id,
     );
     await library.sendMessage(conversationId, "Teste");
-    expect(library.getSnapshot().error).toBe("Chave inválida");
+    expect(library.getSnapshot().errors.get(conversationId)).toBe(
+      "Chave inválida",
+    );
     expect(library.getSnapshot().data.conversations[0].messages).toHaveLength(
       1,
     );
@@ -244,7 +320,7 @@ describe("local library and chat lifecycle", () => {
         .data.conversations[0].messages.map((message) => message.content),
     ).toEqual(["Teste", "Agora sim"]);
     expect(completion.start.mock.calls[1][0].messages).toHaveLength(2);
-    expect(library.getSnapshot().error).toBeNull();
+    expect(library.getSnapshot().errors.has(conversationId)).toBe(false);
     await library.flush();
   });
 

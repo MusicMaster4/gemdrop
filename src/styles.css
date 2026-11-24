@@ -210,6 +210,9 @@ a {
   text-overflow: ellipsis;
   flex: 1;
 }
+.generation-indicator {
+  flex-shrink: 0;
+}
 .recent-item:hover,
 .recent-item.active {
   background: #1c1d21;

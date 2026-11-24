@@ -48,7 +48,7 @@ export function UpdateControl() {
     let received = 0;
     try {
       const library = getLibraryController();
-      await library.stopGeneration();
+      await library.stopAllGenerations();
       await library.flush();
       if (library.getSnapshot().persistenceError)
         throw new Error("Save failed");

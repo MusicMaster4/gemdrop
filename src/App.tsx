@@ -121,7 +121,7 @@ function WebAccessIndicator() {
 
 export default function App() {
   const library = useLibrary();
-  const { data, ready, persistenceError, streamingConversationId, error } =
+  const { data, ready, persistenceError, streamingConversationIds, errors } =
     library;
   const [view, setView] = useState<
     "library" | "favorites" | "history" | "chat"
@@ -216,7 +216,6 @@ export default function App() {
     setConversationId(id);
     setView("chat");
     setSearch("");
-    library.clearError();
   }
   function startConversation(presetId: string) {
     openConversation(library.createConversation(presetId));
@@ -337,8 +336,13 @@ export default function App() {
                     style={{ background: preset?.color ?? "#a7a2b7" }}
                   />
                   <span>{conversation.title}</span>
-                  {streamingConversationId === conversation.id && (
-                    <LoaderCircle className="spin" size={12} />
+                  {streamingConversationIds.has(conversation.id) && (
+                    <LoaderCircle
+                      className="spin generation-indicator"
+                      size={12}
+                      role="img"
+                      aria-label="Gerando resposta"
+                    />
                   )}
                 </button>
               );
@@ -374,16 +378,12 @@ export default function App() {
             conversation={activeConversation}
             preset={activePreset}
             modelName={modelShortName(activeConversation.model, models)}
-            streaming={streamingConversationId === activeConversation.id}
-            anotherStreaming={Boolean(
-              streamingConversationId &&
-              streamingConversationId !== activeConversation.id,
-            )}
-            error={error}
-            onClearError={library.clearError}
+            streaming={streamingConversationIds.has(activeConversation.id)}
+            error={errors.get(activeConversation.id) ?? null}
+            onClearError={() => library.clearError(activeConversation.id)}
             onBack={() => navigate("library")}
             onSend={send}
-            onStop={() => void library.stopGeneration()}
+            onStop={() => void library.stopGeneration(activeConversation.id)}
             onRetry={() => void library.retryMessage(activeConversation.id)}
             onChooseModel={() => setModelPicker("chat")}
             onNew={() => activePreset && startConversation(activePreset.id)}
@@ -493,6 +493,14 @@ export default function App() {
                               {conversation.messages.length} mensagens
                             </span>
                           </span>
+                          {streamingConversationIds.has(conversation.id) && (
+                            <LoaderCircle
+                              className="spin generation-indicator"
+                              size={14}
+                              role="img"
+                              aria-label="Gerando resposta"
+                            />
+                          )}
                           <span className="history-date">
                             {dateLabel(conversation.updatedAt)}
                           </span>
@@ -810,7 +818,6 @@ function ChatView({
   preset,
   modelName,
   streaming,
-  anotherStreaming,
   error,
   onClearError,
   onBack,
@@ -827,7 +834,6 @@ function ChatView({
   preset?: Preset;
   modelName: string;
   streaming: boolean;
-  anotherStreaming: boolean;
   error: string | null;
   onClearError: () => void;
   onBack: () => void;
@@ -866,7 +872,7 @@ function ChatView({
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     const text = draft.trim();
-    if (!text || streaming || anotherStreaming) return;
+    if (!text || streaming) return;
     if (await onSend(text)) {
       setDraft("");
       setAtBottom(true);
@@ -1085,8 +1091,7 @@ function ChatView({
                           </IconButton>
                           {message.role === "assistant" &&
                             index === conversation.messages.length - 1 &&
-                            !streaming &&
-                            !anotherStreaming && (
+                            !streaming && (
                               <IconButton
                                 label="Gerar outra resposta"
                                 onClick={onRetry}
@@ -1121,18 +1126,16 @@ function ChatView({
             {error && (
               <div className="chat-error" role="alert">
                 <span>{error}</span>
-                {!streaming &&
-                  !anotherStreaming &&
-                  conversation.messages.length > 0 && (
-                    <button
-                      type="button"
-                      className="button ghost"
-                      onClick={onRetry}
-                    >
-                      <RotateCcw size={14} />
-                      Tentar novamente
-                    </button>
-                  )}
+                {!streaming && conversation.messages.length > 0 && (
+                  <button
+                    type="button"
+                    className="button ghost"
+                    onClick={onRetry}
+                  >
+                    <RotateCcw size={14} />
+                    Tentar novamente
+                  </button>
+                )}
                 <IconButton label="Fechar erro" onClick={onClearError}>
                   <X size={14} />
                 </IconButton>
@@ -1146,14 +1149,9 @@ function ChatView({
                 ref={textareaRef}
                 aria-label="Mensagem"
                 maxLength={100000}
-                placeholder={
-                  anotherStreaming
-                    ? "Outra conversa está respondendo..."
-                    : "O que vamos criar hoje?"
-                }
+                placeholder="O que vamos criar hoje?"
                 rows={1}
                 value={draft}
-                disabled={anotherStreaming}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (
@@ -1190,7 +1188,7 @@ function ChatView({
                   <button
                     type="submit"
                     className="send-button"
-                    disabled={!draft.trim() || anotherStreaming}
+                    disabled={!draft.trim()}
                     aria-label="Enviar mensagem"
                   >
                     <ArrowUp size={20} strokeWidth={2} />
